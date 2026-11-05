@@ -51,7 +51,11 @@ export const usePromptSourceStore = create<PromptSourceStore>()(
                 const savedSources = Array.isArray(persistedState.sources) ? persistedState.sources : [];
                 const enabledById = new Map(savedSources.map((source) => [source.id, source.enabled]));
                 const builtIn = DEFAULT_PROMPT_SOURCES.map((source) => ({ ...source, enabled: enabledById.get(source.id) ?? source.enabled }));
-                const custom = savedSources.filter((source) => !source.builtIn).map((source) => createPromptSource(source));
+                const builtInNames = new Set(builtIn.map((source) => source.name));
+                const custom = savedSources
+                    .filter((source) => !source.builtIn)
+                    .filter((source) => !builtInNames.has(source.name))
+                    .map((source) => createPromptSource(source));
                 return { ...current, sources: [...builtIn, ...custom], schedule: { ...defaultSchedule, ...(persistedState.schedule || {}) } };
             },
         },

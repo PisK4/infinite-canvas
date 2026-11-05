@@ -112,14 +112,21 @@ function getOrStartRefresh(source: PromptSource) {
 }
 
 async function getSourcePrompts(source: PromptSource): Promise<Prompt[]> {
+    // Locally hosted sources (served by this deployment next to the page) are
+    // read live: their JSON changes on disk, and a 1h cache would keep showing
+    // a previous edit after the file has been replaced.
+    const local = source.url.includes("/custom/");
     const cached = await readSourceCache(source.id);
-    if (cached) {
+    if (!local && cached) {
         const stale = cached.signature !== sourceSignature(source) || Date.now() - cached.fetchedAt >= cacheTtlMs;
         if (stale) void getOrStartRefresh(source).catch(() => undefined);
         return withSourceMeta(source, cached.items);
     }
     const result = await getOrStartRefresh(source);
-    if (!result.success) throw new Error(result.lastError);
+    if (!result.success) {
+        if (cached) return withSourceMeta(source, cached.items);
+        throw new Error(result.lastError);
+    }
     return (await readSourceCache(source.id))?.items || [];
 }
 

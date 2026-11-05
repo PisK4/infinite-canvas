@@ -1,11 +1,19 @@
 services:
   app:
-    image: ghcr.io/basketikun/infinite-canvas:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    image: infinite-canvas:local
     container_name: infinite-canvas
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3300:3000"
     restart: unless-stopped
-    # 统计分析（可选，默认关闭）。每家一个独立变量，填了谁就启用谁，可同时启用多家：
-    # environment:
-    #   ANALYTICS_GA4_ID: G-XXXXXXXXXX                    # Google Analytics 4 衡量 ID
-    #   ANALYTICS_BAIDU_ID: xxxxxxxxxxxxxxxxxxxxxxxxxxxx   # 百度统计站点 ID
+    volumes:
+      - ./custom:/usr/share/nginx/html/custom:ro
+    environment:
+      # Browser-facing gateway address: the page runs in the host browser, not in this container.
+      MAGPIE_BASE_URL: "http://127.0.0.1:3425"
+      MAGPIE_API_KEY: "${MAGPIE_API_KEY}"
+      MAGPIE_IMAGE_MODELS: "workbuddy-ai/hy-image-3.5,workbuddy/hunyuan-image-alpha,codex/gpt-image-2"
+      MAGPIE_TEXT_MODEL: "auto/deepseek-v4.1-flash"
+      MAGPIE_DEFAULT_IMAGE_MODEL: "codex/gpt-image-2"

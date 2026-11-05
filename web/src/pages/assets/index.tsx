@@ -494,6 +494,17 @@ function AssetDrawer({ asset, onClose, onCopy, onDownload }: { asset: Asset | nu
                     ) : (
                         <div className="rounded-lg border border-stone-200 bg-stone-50 p-5 text-sm leading-6 text-stone-600 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-300">{asset.kind === "text" ? asset.data.content : t("assets.noCover")}</div>
                     )}
+                    {(() => {
+                        const refs = (asset.metadata?.referenceImages as string[] | undefined)?.filter((url) => url !== asset.coverUrl) ?? [];
+                        if (!refs.length) return null;
+                        return (
+                            <div className="grid grid-cols-3 gap-2">
+                                {refs.map((url) => (
+                                    <Image key={url} src={url} alt="" className="aspect-square w-full rounded-md object-cover" />
+                                ))}
+                            </div>
+                        );
+                    })()}
                     <div>
                         <Typography.Title level={4} className="!mb-2">
                             {asset.title}

@@ -43,6 +43,8 @@ export function assetCoverUrl(asset: Asset) {
 }
 
 const ASSET_STORE_KEY = "infinite-canvas:asset_store";
+const CUSTOM_PROMPTS_URL = "/custom/prompts.json";
+const CUSTOM_ASSET_REMOVED_KEY = "infinite-canvas:custom_assets_removed";
 
 const assetStorage: PersistStorage<AssetStore> = {
     getItem: async (name) => {
@@ -72,6 +74,83 @@ const assetStorage: PersistStorage<AssetStore> = {
     removeItem: (name) => localForageStorage.removeItem(name),
 };
 
+// A deployment can host its own prompt cases at /custom/prompts.json (with
+// reference/output images under /custom/images/). They are seeded into the
+// asset store on every load so every browser sees them, while the data
+// itself stays out of the repository (the file is served from a mounted
+// volume). Deleting such an asset is remembered and not revived.
+type CustomPromptEntry = {
+    id?: unknown;
+    title?: unknown;
+    prompt?: unknown;
+    tags?: unknown;
+    coverUrl?: unknown;
+    referenceImageUrls?: unknown;
+    description?: unknown;
+};
+
+function resolveCustomUrl(path: string) {
+    try {
+        return new URL(path, new URL(CUSTOM_PROMPTS_URL, window.location.origin)).toString();
+    } catch {
+        return path;
+    }
+}
+
+async function loadCustomAssets(): Promise<Asset[]> {
+    let entries: CustomPromptEntry[];
+    try {
+        const response = await fetch(CUSTOM_PROMPTS_URL, { cache: "no-store" });
+        if (!response.ok) return [];
+        entries = await response.json();
+    } catch {
+        return [];
+    }
+    if (!Array.isArray(entries)) return [];
+    let removed: string[] = [];
+    try {
+        removed = JSON.parse(localStorage.getItem(CUSTOM_ASSET_REMOVED_KEY) || "[]") as string[];
+    } catch {
+        removed = [];
+    }
+    const now = new Date().toISOString();
+    const assets: Asset[] = [];
+    for (const [index, entry] of entries.entries()) {
+        const title = typeof entry.title === "string" ? entry.title : "";
+        const prompt = typeof entry.prompt === "string" ? entry.prompt : "";
+        if (!title || !prompt) continue;
+        const id = `custom-${typeof entry.id === "string" && entry.id ? entry.id : index + 1}`;
+        if (removed.includes(id)) continue;
+        const images = Array.isArray(entry.referenceImageUrls) ? entry.referenceImageUrls.filter((u): u is string => typeof u === "string").map(resolveCustomUrl) : [];
+        const cover = typeof entry.coverUrl === "string" && entry.coverUrl ? resolveCustomUrl(entry.coverUrl) : images[0] || "";
+        const tags = Array.isArray(entry.tags) ? entry.tags.filter((t): t is string => typeof t === "string") : [];
+        assets.push({
+            kind: "text",
+            id,
+            title,
+            coverUrl: cover,
+            tags,
+            source: "custom",
+            note: typeof entry.description === "string" ? entry.description : "",
+            createdAt: now,
+            updatedAt: now,
+            metadata: { referenceImages: images },
+            data: { content: prompt },
+        });
+    }
+    return assets;
+}
+
+async function seedCustomAssets() {
+    const custom = await loadCustomAssets();
+    if (!custom.length) return;
+    useAssetStore.setState((state) => {
+        const present = new Set(state.assets.map((asset) => asset.id));
+        const missing = custom.filter((asset) => !present.has(asset.id));
+        return missing.length ? { assets: [...missing, ...state.assets] } : {};
+    });
+}
+
 export const useAssetStore = create<AssetStore>()(
     persist(
         (set, get) => ({
@@ -89,6 +168,15 @@ export const useAssetStore = create<AssetStore>()(
                 })),
             removeAsset: (id) =>
                 set((state) => {
+                    if (id.startsWith("custom-")) {
+                        let removed: string[] = [];
+                        try {
+                            removed = JSON.parse(localStorage.getItem(CUSTOM_ASSET_REMOVED_KEY) || "[]") as string[];
+                        } catch {
+                            removed = [];
+                        }
+                        if (!removed.includes(id)) localStorage.setItem(CUSTOM_ASSET_REMOVED_KEY, JSON.stringify([...removed, id]));
+                    }
                     const assets = state.assets.filter((asset) => asset.id !== id);
                     get().cleanupImages({ assets });
                     return { assets };
@@ -108,6 +196,7 @@ export const useAssetStore = create<AssetStore>()(
             partialize: (state) => ({ assets: state.assets }) as StorageValue<AssetStore>["state"],
             onRehydrateStorage: () => () => {
                 useAssetStore.setState({ hydrated: true });
+                void seedCustomAssets();
             },
         },
     ),

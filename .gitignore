@@ -15,3 +15,7 @@ web/public/plugins
 plugins/canvas/*/dist
 plugins/canvas/*/node_modules
 web/public/plugins
+
+# 本地部署：Magpie key 与图片资产不入库
+.env
+custom/
