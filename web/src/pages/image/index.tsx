@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, ImagePlus, LoaderCircle, PenLine, Plus, SlidersHorizontal, Sparkles, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderOpen, FolderPlus, History, ImagePlus, LoaderCircle, PenLine, Plus, SlidersHorizontal, Sparkles, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { App, Button, Checkbox, Drawer, Empty, Image, Input, Modal, Tag, Tooltip, Typography } from "antd";
 import localforage from "localforage";
@@ -16,7 +16,8 @@ import { useThemeStore } from "@/stores/use-theme-store";
 import { nanoid } from "nanoid";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { requestEdit, requestGeneration } from "@/services/api/image";
-import { deleteStoredImages, ensureImagePreview, getImagePreviewRevision, previewUrlFor, resolveImageUrl, subscribeImagePreviews, uploadImage } from "@/services/image-storage";
+import { deleteStoredImages, ensureImagePreview, getImageBlob, getImagePreviewRevision, previewUrlFor, resolveImageUrl, subscribeImagePreviews, uploadImage } from "@/services/image-storage";
+import { chooseImageSaveDirectory, clearImageSaveDirectory, getImageSaveDirectory, imageFileName, requestImageSavePermission, supportsImageSaveDirectory, writeImageFile, type ImageSaveDirectory } from "@/services/image-save-directory";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
 import type { ReferenceImage } from "@/types/image";
@@ -95,6 +96,7 @@ export default function ImagePage() {
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [isReferenceDragActive, setIsReferenceDragActive] = useState(false);
     const [autoRunToken, setAutoRunToken] = useState(0);
+    const [saveDirectory, setSaveDirectory] = useState<ImageSaveDirectory | null>(null);
     const imageCommand = useWorkbenchAgentStore((state) => state.imageCommand);
     const clearImageCommand = useWorkbenchAgentStore((state) => state.clearImageCommand);
     const updateAgentTask = useWorkbenchAgentStore((state) => state.updateTask);
@@ -113,6 +115,10 @@ export default function ImagePage() {
 
     useEffect(() => {
         void refreshLogs();
+    }, []);
+
+    useEffect(() => {
+        void getImageSaveDirectory().then(setSaveDirectory);
     }, []);
 
     const addReferences = async (files?: FileList | null) => {
@@ -147,6 +153,22 @@ export default function ImagePage() {
         }
     };
 
+    const chooseSaveDirectory = async () => {
+        try {
+            const next = await chooseImageSaveDirectory();
+            if (next) setSaveDirectory(next);
+            else message.warning(t("imageWorkbench.directoryPermissionDenied"));
+        } catch (error) {
+            if (error instanceof DOMException && error.name === "AbortError") return;
+            message.error(t("imageWorkbench.directorySaveFailed"));
+        }
+    };
+
+    const removeSaveDirectory = async () => {
+        await clearImageSaveDirectory();
+        setSaveDirectory(null);
+    };
+
     const generate = async () => {
         const agentTaskId = agentTaskIdRef.current;
         agentTaskIdRef.current = undefined;
@@ -167,6 +189,12 @@ export default function ImagePage() {
         if (!snapshot) {
             if (agentTaskId) updateAgentTask(agentTaskId, { status: "failed", error: t("imageWorkbench.invalidParams") });
             return;
+        }
+
+        if (saveDirectory && !saveDirectory.granted) {
+            const granted = await requestImageSavePermission(saveDirectory.handle).catch(() => false);
+            setSaveDirectory({ handle: saveDirectory.handle, granted });
+            if (!granted) message.warning(t("imageWorkbench.directoryPermissionDenied"));
         }
 
         setElapsedMs(0);
@@ -318,6 +346,18 @@ export default function ImagePage() {
         return { text, config: { ...effectiveConfig, model, count: "1" }, references: [...references] };
     };
 
+    const saveGeneratedImage = async (image: GeneratedImage) => {
+        const directory = saveDirectory;
+        if (!directory) return;
+        try {
+            const blob = image.storageKey ? await getImageBlob(image.storageKey) : await (await fetch(image.dataUrl)).blob();
+            if (!blob) throw new Error(t("imageWorkbench.directorySaveFailed"));
+            await writeImageFile(directory.handle, imageFileName(blob.type || image.mimeType || ""), blob);
+        } catch {
+            message.warning({ content: t("imageWorkbench.directorySaveFailed"), key: "image-workbench-save-failed" });
+        }
+    };
+
     const runGenerationSlot = async (index: number, snapshot: { text: string; config: AiConfig; references: ReferenceImage[] }) => {
         const itemStartedAt = performance.now();
         try {
@@ -327,6 +367,7 @@ export default function ImagePage() {
             const stored = await uploadImage(image.dataUrl);
             const nextImage: GeneratedImage = { id: image.id, dataUrl: stored.url, ...(stored.storageKey ? { storageKey: stored.storageKey } : {}), durationMs: performance.now() - itemStartedAt, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType };
             setResults((value) => updateResultAt(value, index, { status: "success", image: nextImage }));
+            if (saveDirectory) void saveGeneratedImage(nextImage);
             return nextImage;
         } catch (error) {
             setResults((value) => updateResultAt(value, index, { status: "failed", error: error instanceof Error ? error.message : t("workbench.generationFailed") }));
@@ -487,6 +528,28 @@ export default function ImagePage() {
                             <Button type="primary" size="large" block icon={<Sparkles className="size-4" />} loading={running} disabled={!canGenerate || running} onClick={() => void generate()}>
                                 {t("workbench.generate")}
                             </Button>
+                            {supportsImageSaveDirectory() ? (
+                                <div className="mt-2 flex h-7 items-center justify-center gap-1 text-xs text-stone-500 dark:text-stone-400">
+                                    <FolderOpen className="size-3.5 shrink-0" />
+                                    {saveDirectory ? (
+                                        <>
+                                            <span className="max-w-[9rem] truncate sm:max-w-[14rem]" title={saveDirectory.handle.name}>
+                                                {t("imageWorkbench.saveDirectoryName", { name: saveDirectory.handle.name })}
+                                            </span>
+                                            <Button size="small" type="text" className="!h-6 !px-1.5" onClick={() => void chooseSaveDirectory()}>
+                                                {t("imageWorkbench.changeDirectory")}
+                                            </Button>
+                                            <Button size="small" type="text" className="!h-6 !px-1.5" onClick={() => void removeSaveDirectory()}>
+                                                {t("imageWorkbench.removeDirectory")}
+                                            </Button>
+                                        </>
+                                    ) : (
+                                        <Button size="small" type="text" className="!h-6 !px-1.5" icon={<FolderPlus className="size-3.5" />} onClick={() => void chooseSaveDirectory()}>
+                                            {t("imageWorkbench.chooseSaveDirectory")}
+                                        </Button>
+                                    )}
+                                </div>
+                            ) : null}
                         </div>
                     </div>
 

@@ -3,6 +3,16 @@
 declare const __APP_VERSION__: string;
 declare const __APP_RELEASES__: import("@/lib/release").ReleaseInfo[];
 
+// Chrome-only File System Access APIs, missing from the DOM lib.
+interface FileSystemHandle {
+    queryPermission(descriptor?: { mode?: "read" | "readwrite" }): Promise<PermissionState>;
+    requestPermission(descriptor?: { mode?: "read" | "readwrite" }): Promise<PermissionState>;
+}
+
+interface Window {
+    showDirectoryPicker?(options?: { id?: string; mode?: "read" | "readwrite" }): Promise<FileSystemDirectoryHandle>;
+}
+
 interface ImportMetaEnv {
     // Comma-separated local development plugin URLs, refetched on every startup without caching or persistence.
     readonly VITE_DEV_PLUGINS?: string;

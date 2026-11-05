@@ -183,6 +183,12 @@ export default {
         empty: "还没有生成图片",
         resultAlt: "生成结果 {{count}}",
         addReference: "加入参考图",
+        chooseSaveDirectory: "选择保存目录",
+        saveDirectoryName: "原图保存到 {{name}}",
+        changeDirectory: "更改",
+        removeDirectory: "移除",
+        directoryPermissionDenied: "没有目录写入权限，本次生成不会自动保存原图",
+        directorySaveFailed: "原图保存到本地目录失败",
     },
     videoWorkbench: {
         title: "视频创作台",

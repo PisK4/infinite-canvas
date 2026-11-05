@@ -183,6 +183,12 @@ export default {
         empty: "No images generated yet",
         resultAlt: "Generated image {{count}}",
         addReference: "Add as reference",
+        chooseSaveDirectory: "Choose save folder",
+        saveDirectoryName: "Save originals to {{name}}",
+        changeDirectory: "Change",
+        removeDirectory: "Remove",
+        directoryPermissionDenied: "No write permission for the folder. Originals will not be saved this time.",
+        directorySaveFailed: "Could not save the original image to the local folder",
     },
     videoWorkbench: {
         title: "Video Studio",
