@@ -9,7 +9,10 @@ services:
       - "127.0.0.1:3300:3000"
     restart: unless-stopped
     volumes:
-      - ./custom:/usr/share/nginx/html/custom:ro
+      - ./custom/prompts.json:/usr/share/nginx/html/custom/prompts.json:ro
+      # Reference/output images live once, in the external archive; mounting
+      # them read-only keeps the repository free of 160MB of duplicates.
+      - "/Users/pis/workspace_intelligence/creator-intelligence/外部资料/sunall-NSFW-经验总结/images:/usr/share/nginx/html/custom/images:ro"
     environment:
       # Browser-facing gateway address: the page runs in the host browser, not in this container.
       MAGPIE_BASE_URL: "http://127.0.0.1:3425"
